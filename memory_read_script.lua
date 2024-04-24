@@ -1,22 +1,33 @@
-MAX_ADDRESS = 10000000
-
 tb = console:createBuffer("test-output")
 
-
+--- Notes: 
+-- When searching ram for an value the value can be stored:
+-- 	GBA stores memory in LITTLE ENDIAN
+-- 	Stores in both IWRAM & EWRAM, some values may be stored in the cart or in the ROM itself
+-- 	we need to figure out what types of numbers the processor operates on but we may need varients for signed vs unsign ints/byte/shorts etc
 function find_addresses(value)
+	-- Debugging output
 	tb:print("searching for address\n")
 
 	local found_addresses = {}
 
-	--- Search VRAM
-	search_address_space_full(value, found_addresses, 0x06000000, 0x07000000)
+	-- Search everything (slow, sanity check, REMOVEME)
+	search_address_space_full(value, found_addresses, 0x02000000, 0x04000000)
 
-	--- TODO: Search other addressess + map addresses based on loaded cart
+	-- Search IWRAM
+	search_address_space_full(value, found_addresses, 0x02000000, 0x0203FFF0)
 
+	-- Search EWRAM 
+	search_address_space_full(value, found_addresses, 0x03000000, 0x03007FF0)
+
+
+	-- Debugging output
 	for _, address in ipairs(found_addresses) do
 		local out = string.format("found @%x\n", address)
 		tb:print(out)
 	end
+
+	return found_addresses
 end
 
 function search_address_space_full(value, output_table, start_adr, end_adr)
@@ -26,6 +37,7 @@ function search_address_space_full(value, output_table, start_adr, end_adr)
 end
 
 function search_address_space(value, output_table, start_adr, end_adr, size, search_function)
+
 	for i = start_adr, end_adr, size do
 		local byte = search_function(i)
 		if byte == value then
@@ -51,7 +63,7 @@ function a()
 end
 
 function poll_demo()
-	print("poll active!")
+	-- print("poll active!")
 	-- tb:print("poll!")
 	-- emu:read32(0x0E000FF8)
 end
