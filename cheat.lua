@@ -6,6 +6,36 @@ local json = require("scripts/json")
 local emu_ms = require("scripts/mgba_memsearch")
 
 -------------------------------------------------------------------------------
+-- Utils
+-------------------------------------------------------------------------------
+
+function contains(arr, val)
+    for _, v in ipairs(arr) do
+        if v == val then
+            return true
+        end
+    end
+    return false
+end
+
+function intersection(arr1, arr2)
+    local intersect = {}
+    for _, v in ipairs(arr1) do
+        if contains(arr2, v) then
+            intersect[#intersect + 1] = v
+        end
+    end
+    return intersect
+end
+
+function bind(obj, method)
+    function bound(...) 
+        return obj[method](obj, ...)
+    end
+    return bound
+end
+
+-------------------------------------------------------------------------------
 -- Globals
 -------------------------------------------------------------------------------
 
@@ -14,6 +44,21 @@ master = {}
 guessed_values = {}
 known_values = {}
 --local json = loadfile(script.dir .. "/scripts/json.lua")
+
+rw_sizes = {
+    [8] = {
+        read = bind(emu, "read8"),
+        write = bind(emu, "write8")
+    },
+    [16] = {
+        read = bind(emu, "read16"),
+        write = bind(emu, "write16")
+    },
+    [32] = {
+        read = bind(emu, "read32"),
+        write = bind(emu, "write32")
+    }
+}
 
 -------------------------------------------------------------------------------
 -- Code
@@ -30,7 +75,7 @@ end
 
 function look_for(name, value)
 	if not is_game_loaded() then
-		logger:print("Please load a valid game before attempting to search memory.")
+		logger:print("Please load a valid game before attempting to search memory.\n")
 		return
 	end
 
@@ -50,7 +95,7 @@ function look_for(name, value)
 	local new_guesses = intersection(addresses, old_guesses)
 
 	if #new_guesses == 0 then
-		logger:print("Unable to find new value in memory. Not updating filtered addresses.")
+		logger:print("Unable to find new value in memory. Not updating filtered addresses.\n")
 		return
 	end
 
@@ -66,78 +111,30 @@ function look_for(name, value)
 	end
 end
 
-function contains(arr, val)
-	for _, v in ipairs(arr) do
-		if v == val then
-			return true
-		end
-	end
-	return false
-end
-
-function intersection(arr1, arr2)
-	local intersect = {}
-	for _, v in ipairs(arr1) do
-		if contains(arr2, v) then
-			intersect[#intersect + 1] = v
-		end
-	end
-	return intersect
-end
-
 -------------------------------------------------------------------------------
 -- Mutating
 -------------------------------------------------------------------------------
 
 function set_value(name, write_mode, new_value)
-	if known_values[name] ~= nil then 
+	if known_values[name] == nil then 
 		logger:print(
-			string.format("No memory address associated with %s. Please use 'look_for(%s, CURRENT_VALUE)' to populate known addresses.",
-				name, name)
+			string.format("No memory address associated with %s."
+                       .. " Please use 'look_for(\"%s\", CURRENT_VALUE)' to populate known addresses.\n",
+				          name, name)
 			)
 		return
 	end 
 
---- ?? Lua bullshits happening 
--- FIXME
-	local write_modes = {} 
-	write_modes[8] = true
-	write_modes[16] = true
-	write_modes[32] = true
-	if write_modes[write_mode] ~= nil then
-		-- logger:print("Please enter a valid write mode (8/16/32)")
-		 -- return
+	if rw_sizes[write_mode] == nil then
+	   logger:print("Please enter a valid write mode (8/16/32)\n")
+	   return
 	end
 
 	local address = known_values[name]
-	-- !FIXME! 
-	-- write_modes[write_mode](address, new_value)
-	
-	if write_mode == 8 then
-		write8(address, new_value)
-	end
-	if write_mode == 16 then
-		write16(address, new_value)
-	end
-	if write_mode == 32 then
-		write32(address, new_value)
-	end
+    logger:print(string.format("Writing %d bytes to %x\n", write_mode, address))
+	rw_sizes[write_mode].write(address, new_value)
 end
 
-function write8(address, value)
-	logger:print(string.format("writting 8 bytes to %x", address))
-	emu:write8(addresses, value)
-end 
-
-function write16(address, value)
-	logger:print(string.format("writting 16 bytes to %x", address))
-	emu:write16(address, value)
-end
-
-function write32(address, value)
-	logger:print(string.format("writting 32 bytes to %x", address))
-	emu:write32(address, value)
-end
 -------------------------------------------------------------------------------
 -- Persistance
 -------------------------------------------------------------------------------
@@ -201,4 +198,5 @@ if not emu_ms then
 	return
 end
 
+on_game_start()
 callbacks:add("start", on_game_start)
