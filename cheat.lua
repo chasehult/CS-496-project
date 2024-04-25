@@ -3,7 +3,6 @@
 -------------------------------------------------------------------------------
 
 local json = require("scripts/json")
-local emu_ms = require("scripts/mgba_memsearch")
 
 -------------------------------------------------------------------------------
 -- Utils
@@ -22,7 +21,7 @@ function intersection(arr1, arr2)
     local intersect = {}
     for _, v in ipairs(arr1) do
         if contains(arr2, v) then
-            intersect[#intersect + 1] = v
+            table.insert(intersect, v)
         end
     end
     return intersect
@@ -34,6 +33,7 @@ function bind(obj, method)
     end
     return bound
 end
+
 
 -------------------------------------------------------------------------------
 -- Globals
@@ -65,8 +65,49 @@ rw_sizes = {
 -------------------------------------------------------------------------------
 
 function on_game_start()
-	-- Load existing data for this game
-	load_master()
+    -- Load existing data for this game
+    load_master()
+end
+
+-------------------------------------------------------------------------------
+-- Memory Search
+-------------------------------------------------------------------------------
+
+function find_addresses(value)
+    logger:print(string.format("Searching WRAM for addresses containing %d...\n", value))
+
+    local found_addresses = {}
+
+    -- Search IWRAM
+    search_address_space_full(value, found_addresses, 0x02000000, 0x0203FFF0)
+
+    -- Search EWRAM 
+    search_address_space_full(value, found_addresses, 0x03000000, 0x03007FF0)
+
+    -- Debugging output
+    for _, address in ipairs(found_addresses) do
+        local out = string.format("Found %d @%x\n", value, address)
+        logger:print(out)
+    end
+    
+    logger:print("Search completed.")
+
+    return found_addresses
+end
+
+function search_address_space_full(value, output_table, start_adr, end_adr)
+    search_address_space(value, output_table, start_adr, end_adr, 32)
+    search_address_space(value, output_table, start_adr, end_adr, 16)
+    search_address_space(value, output_table, start_adr, end_adr, 8)
+end
+
+function search_address_space(value, output_table, start_adr, end_adr, size)
+    for i = start_adr, (end_adr - size), 1 do
+        local byte = rw_sizes[size].read(i)
+        if byte == value then
+            table.insert(output_table, i)
+        end
+    end
 end
 
 -------------------------------------------------------------------------------
@@ -85,7 +126,7 @@ function look_for(name, value)
 		return
 	end
 
-	local addresses = emu_ms.find_addresses(value)
+	local addresses = find_addresses(value)
 
 	if guessed_values[name] == nil then
 		guessed_values[name] = addresses
@@ -108,7 +149,10 @@ function look_for(name, value)
 	else
 		local str = string.format("Found %d possibilities\n", #new_guesses)
 		logger:print(str)
+        guessed_values[name] = new_guesses
 	end
+
+
 end
 
 -------------------------------------------------------------------------------
@@ -189,12 +233,6 @@ end
 -- Ensure JSON was loaded properly
 if not json then
 	logger:print("You must run the setup script...\n")
-	return
-end
-
--- Ensure memory search was loaded properly
-if not emu_ms then
-	logger:print("Missing required file 'scripts/mgba_memsearch.lua'.")
 	return
 end
 
