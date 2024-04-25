@@ -98,31 +98,45 @@ function set_value(name, write_mode, new_value)
 		return
 	end 
 
-	local write_modes = {8 = write8, 16 = write16, 32 = write32} 
+--- ?? Lua bullshits happening 
+-- FIXME
+	local write_modes = {} 
+	write_modes[8] = true
+	write_modes[16] = true
+	write_modes[32] = true
 	if write_modes[write_mode] ~= nil then
-		logger:print("Please enter a valid write mode (8/16/32)")
-		return
+		-- logger:print("Please enter a valid write mode (8/16/32)")
+		 -- return
 	end
 
 	local address = known_values[name]
 	-- !FIXME! 
-	-- lua is not my friend
-	write_modes[write_mode](address, new_value)
+	-- write_modes[write_mode](address, new_value)
+	
+	if write_mode == 8 then
+		write8(address, new_value)
+	end
+	if write_mode == 16 then
+		write16(address, new_value)
+	end
+	if write_mode == 32 then
+		write32(address, new_value)
+	end
 end
 
 function write8(address, value)
-	logger:print(string.format("writting 8 bytes to %x"), address)
+	logger:print(string.format("writting 8 bytes to %x", address))
 	emu:write8(addresses, value)
 end 
 
-function write16(addresses, value)
-	logger:print(string.format("writting 16 bytes to %x"), address)
-	emu:write16(addresses, value)
+function write16(address, value)
+	logger:print(string.format("writting 16 bytes to %x", address))
+	emu:write16(address, value)
 end
 
-function write32(addresses, value)
-	logger:print(string.format("writting 32 bytes to %x"), address)
-	emu:write32(addresses, value)
+function write32(address, value)
+	logger:print(string.format("writting 32 bytes to %x", address))
+	emu:write32(address, value)
 end
 -------------------------------------------------------------------------------
 -- Persistance
