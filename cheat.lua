@@ -89,7 +89,41 @@ end
 -- Mutating
 -------------------------------------------------------------------------------
 
+function set_value(name, write_mode, new_value)
+	if known_values[name] ~= nil then 
+		logger:print(
+			string.format("No memory address associated with %s. Please use 'look_for(%s, CURRENT_VALUE)' to populate known addresses.",
+				name, name)
+			)
+		return
+	end 
 
+	local write_modes = {8 = write8, 16 = write16, 32 = write32} 
+	if write_modes[write_mode] ~= nil then
+		logger:print("Please enter a valid write mode (8/16/32)")
+		return
+	end
+
+	local address = known_values[name]
+	-- !FIXME! 
+	-- lua is not my friend
+	write_modes[write_mode](address, new_value)
+end
+
+function write8(address, value)
+	logger:print(string.format("writting 8 bytes to %x"), address)
+	emu:write8(addresses, value)
+end 
+
+function write16(addresses, value)
+	logger:print(string.format("writting 16 bytes to %x"), address)
+	emu:write16(addresses, value)
+end
+
+function write32(addresses, value)
+	logger:print(string.format("writting 32 bytes to %x"), address)
+	emu:write32(addresses, value)
+end
 -------------------------------------------------------------------------------
 -- Persistance
 -------------------------------------------------------------------------------
