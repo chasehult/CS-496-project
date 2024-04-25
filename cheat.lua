@@ -1,5 +1,5 @@
 local Json = require("scripts/json")
-local MemorySearch = require("scripts/mgba_memsearch")
+local emu_ms = require("scripts/mgba_memsearch")
 
 logger = console:createBuffer("stdout")
 
@@ -8,7 +8,7 @@ if not Json then
     return
 end
 
-if not MemorySearch then
+if not emu_ms then
 	logger:print("Missing required file 'scripts/mgba_memsearch.lua'.")
 end
 
@@ -20,7 +20,6 @@ end
 --------
 
 local json = loadfile(script.dir .. "/scripts/json.lua")()
-local emu_ms = loadfile(script.dir .. "/scripts/mgba_memsearch.lua")
 
 master = {}
 guessed_values = {}
