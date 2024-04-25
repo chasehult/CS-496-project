@@ -34,6 +34,19 @@ function bind(obj, method)
     return bound
 end
 
+function dump(o)
+   if type(o) == 'table' then
+      local s = '{ '
+      for k,v in pairs(o) do
+         if type(k) ~= 'number' then k = '"'..k..'"' end
+         s = s .. '['..k..'] = ' .. dump(v) .. ','
+      end
+      return s .. '} '
+   else
+      return tostring(o)
+   end
+end
+
 
 -------------------------------------------------------------------------------
 -- Globals
@@ -45,7 +58,7 @@ guessed_values = {}
 known_values = {}
 --local json = loadfile(script.dir .. "/scripts/json.lua")
 
-rw_sizes = {
+RW_SIZES = {
     [8] = {
         read = bind(emu, "read8"),
         write = bind(emu, "write8")
@@ -57,6 +70,17 @@ rw_sizes = {
     [32] = {
         read = bind(emu, "read32"),
         write = bind(emu, "write32")
+    }
+}
+
+MEM_LOCATIONS = {
+    IWRAM = {
+        start = 0x02000000,
+        stop = 0x0203FFF0
+    },
+    EWRAM = {
+        start = 0x03000000,
+        stop = 0x03007FF0
     }
 }
 
@@ -78,34 +102,32 @@ function find_addresses(value)
 
     local found_addresses = {}
 
-    -- Search IWRAM
-    search_address_space_full(value, found_addresses, 0x02000000, 0x0203FFF0)
-
-    -- Search EWRAM 
-    search_address_space_full(value, found_addresses, 0x03000000, 0x03007FF0)
+    for _, span in pairs(MEM_LOCATIONS) do
+        search_address_space_full(value, found_addresses, span)
+    end
 
     -- Debugging output
-    for _, address in ipairs(found_addresses) do
+    for _, address in pairs(found_addresses) do
         local out = string.format("Found %d @%x\n", value, address)
         logger:print(out)
     end
     
-    logger:print("Search completed.")
+    logger:print("Search completed.\n")
 
     return found_addresses
 end
 
-function search_address_space_full(value, output_table, start_adr, end_adr)
-    search_address_space(value, output_table, start_adr, end_adr, 32)
-    search_address_space(value, output_table, start_adr, end_adr, 16)
-    search_address_space(value, output_table, start_adr, end_adr, 8)
+function search_address_space_full(value, output_table, span)
+    search_address_space(value, output_table, span, 32)
+    search_address_space(value, output_table, span, 16)
+    search_address_space(value, output_table, span, 8)
+    -- TODO: Support Big Endian
 end
 
-function search_address_space(value, output_table, start_adr, end_adr, size)
-    for i = start_adr, (end_adr - size), 1 do
-        local byte = rw_sizes[size].read(i)
-        if byte == value then
-            table.insert(output_table, i)
+function search_address_space(value, output_table, span, size, be)
+    for address = span.start, (span.stop - size), 1 do
+        if RW_SIZES[size].read(address) == value then
+            table.insert(output_table, address)
         end
     end
 end
@@ -169,14 +191,14 @@ function set_value(name, write_mode, new_value)
 		return
 	end 
 
-	if rw_sizes[write_mode] == nil then
+	if RW_SIZES[write_mode] == nil then
 	   logger:print("Please enter a valid write mode (8/16/32)\n")
 	   return
 	end
 
 	local address = known_values[name]
     logger:print(string.format("Writing %d bytes to %x\n", write_mode, address))
-	rw_sizes[write_mode].write(address, new_value)
+	RW_SIZES[write_mode].write(address, new_value)
 end
 
 -------------------------------------------------------------------------------
