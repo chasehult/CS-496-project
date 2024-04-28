@@ -112,6 +112,9 @@ end
 if memout == nil then
 	memout = console:createBuffer("memory")
 end
+if valout == nil then
+	valout = console:createBuffer("values")
+end
 if pinout == nil then
 	pinout = console:createBuffer("pinned")
 end
@@ -186,8 +189,6 @@ function find_addresses(value)
 		search_address_space_full(value, found_locations, span)
 	end
 
-	print(string.format("found %d locations", #found_locations))
-
 	-- Debugging output
 	for _, address in pairs(found_locations) do
 		local out = string.format("Found %d @%x [%d]\n", value, address.start, address.size)
@@ -195,8 +196,6 @@ function find_addresses(value)
 	end
 
 	found_locations = dealias_locations(found_locations)
-	print(string.format("retrieved final locations as : %d", #found_locations))
-	-- print(dump(found_locations))
 
 	-- Debugging output
 	memout:print("Dealiased locations:\n")
@@ -228,8 +227,6 @@ end
 function dealias_locations(locations)
 	local overlap_sets = {}
 
-	print(string.format("%d locations to dealias", #locations))
-
 	for index, location in pairs(locations) do
 		if location == nil then
 			goto continue_location
@@ -240,42 +237,27 @@ function dealias_locations(locations)
 
 		for other_index, other_location in pairs(locations) do
 			if other_location == nil or other_location:equals(location) then
-				-- print("skipping existing location")
 				goto continue
 			end
 			if location:overlaps(other_location) then
 				overlaps[#overlaps + 1] = other_location
 				locations[other_index] = nil
-				print(string.format("OVERLAP: %x", other_location.start))
 			end
 
 			::continue::
 		end
 
 		overlap_sets[#overlap_sets + 1] = overlaps
-		print(dump(overlaps))
-		print("---------")
 
 		::continue_location::
 	end
 
-	print(string.format("%d locations to dealias", #locations))
-	print(string.format("overlapping total %d", #overlap_sets))
-
-
 	local locations = {}
-
-	-- print(string.format("overlapping total %d", #overlap_sets))
 
 	for index, overlap_set in pairs(overlap_sets) do
 		local best_address = get_minimal_overlapping_address(overlap_set)
-		print(dump(overlap_set))
-		print(dump(best_address))
 		locations[#locations + 1] = best_address
 	end
-
-	print(string.format("overlapping total %d", #overlap_sets))
-	print(string.format("final location count : %d", #locations))
 
 	return locations;
 end
@@ -284,18 +266,8 @@ function get_minimal_overlapping_address(overlapping_locations)
 	local smallest_index = -1
 	local smallest_size = 100000
 	local minimal_location = nil
-	-- smallest_start = 1000000
-
-	-- memout:print("determining best address from set of %d", #overlapping_locations)
 
 	for index, location in pairs(overlapping_locations) do
-		-- if (smallest_size == location.size) then
-		-- 	-- TODO -- check this logic for BE values
-		-- 	for _, location_smallest_start in pairs(t) do
-
-		-- 	end
-		-- 	memout:print("found one!!!!!\n")
-		-- end
 		if location.size < smallest_size then
 			smallest_index = index
 			smallest_size = location.size
@@ -307,14 +279,6 @@ function get_minimal_overlapping_address(overlapping_locations)
 	end
 
 	return minimal_location
-end
-
---
-function get_smallest_start_address(locations)
-	-- smallest_start = 1000
-	-- for _, location in pairs(t) do
-
-	-- end
 end
 
 -------------------------------------------------------------------------------
@@ -380,6 +344,33 @@ function print_unknown_value_name_error(value_name)
 			.. " Please use 'look_for(\"%s\", CURRENT_VALUE)' to populate known addresses.\n",
 			value_name, value_name)
 	)
+end
+
+function tick_found_values_display()
+	valout:clear()
+
+	valout:print("Found values:\n")
+
+	if #known_values == 0 then
+		valout:print("No known values. Use 'look_for(value_name, current_value)' to begin searching for some...\n")
+		return
+	end
+
+	valout:print(string.format("%d values found:\n", #known_values))
+	valout:print("NAME\tADDRESS[SIZE]\t\tVALUE\n")
+
+	for value_name, value_location in pairs(known_values) do
+		local name = value_name
+		local address = value_location.start
+		local size = value_location.size
+		local current_value = RW_SIZES[size].read(address)
+
+		valout:print(string.format("%s\t0x%x [%d]\t\t%d\n",
+			name,
+			address,
+			size,
+			current_value))
+	end
 end
 
 -------------------------------------------------------------------------------
@@ -515,3 +506,4 @@ end
 
 callbacks:add("start", on_game_start)
 callbacks:add("frame", tick_pinned_values)
+callbacks:add("frame", tick_found_values_display)
