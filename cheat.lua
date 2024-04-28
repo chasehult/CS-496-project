@@ -5,48 +5,102 @@
 local json = require("scripts/json")
 
 -------------------------------------------------------------------------------
+-- Types
+-------------------------------------------------------------------------------
+
+Types = {}
+
+Types.Location = {
+	start = 0,
+	size = 0,
+	be = false,
+
+	stop = function(self)
+		return self.start + self.size / 8
+	end,
+
+	equals = function(self, other)
+		if self.be == true then
+			return self.start == other.start
+		elseif self.be == false then
+			return self:stop() == other:stop()
+		end
+	end,
+
+	overlaps = function(self, other)
+		if self.start == other.start or self:stop() == other:stop() then
+			return true
+		end
+		if self.start > other.start then
+			return self.start <= other:stop()
+		else
+			return other.start <= self:stop()
+		end
+	end,
+}
+
+
+function Types.Location:new(start, size, be)
+	local o = {}
+	o.start = start
+	o.size = size
+	o.be = be
+
+	memout:print(string.format("making new location for %x", o.start))
+
+	-- if o.start == nil or o.size == nil or o.be == nil then
+	-- print("invalid o")
+	-- return nil, "Invalid object"
+	-- end
+
+	setmetatable(o, self)
+	self.__index = self
+	return o
+end
+
+-------------------------------------------------------------------------------
 -- Utils
 -------------------------------------------------------------------------------
 
 function contains(arr, val)
-    for _, v in ipairs(arr) do
-        if v == val then
-            return true
-        end
-    end
-    return false
+	for _, v in ipairs(arr) do
+		if v == val then
+			return true
+		end
+	end
+	return false
 end
 
 function intersection(arr1, arr2)
-    local intersect = {}
-    for _, v in ipairs(arr1) do
-        if contains(arr2, v) then
-            table.insert(intersect, v)
-        end
-    end
-    return intersect
+	local intersect = {}
+	for _, v in ipairs(arr1) do
+		if contains(arr2, v) then
+			table.insert(intersect, v)
+		end
+	end
+	return intersect
 end
 
 function bind(obj, method)
-    function bound(...) 
-        return obj[method](obj, ...)
-    end
-    return bound
+	local function bound(...)
+		return obj[method](obj, ...)
+	end
+
+	return bound
 end
 
 function dump(o)
-   if type(o) == 'table' then
-      local s = '{ '
-      for k,v in pairs(o) do
-         if type(k) ~= 'number' then k = '"'..k..'"' end
-         s = s .. '['..k..'] = ' .. dump(v) .. ','
-      end
-      return s .. '} '
-   else
-      return tostring(o)
-   end
+	if type(o) == 'table' then
+		local s = '{ '
+		for k, v in pairs(o) do
+			if type(k) ~= 'number' then k = '"' .. k .. '"' end
+			s = s .. '[' .. k .. '] = ' .. dump(v) .. ','
+		end
+		return s .. '} '
+	else
+		return tostring(o)
+	end
 end
-
 
 -------------------------------------------------------------------------------
 -- Globals
@@ -55,10 +109,10 @@ end
 if logger == nil then
 	logger = console:createBuffer("main")
 end
-if memout == nil then 
+if memout == nil then
 	memout = console:createBuffer("memory")
 end
-if pinout == nil then 
+if pinout == nil then
 	pinout = console:createBuffer("pinned")
 end
 
@@ -68,29 +122,29 @@ known_values = {}
 pinned_values = {}
 
 RW_SIZES = {
-    [8] = {
-        read = bind(emu, "read8"),
-        write = bind(emu, "write8")
-    },
-    [16] = {
-        read = bind(emu, "read16"),
-        write = bind(emu, "write16")
-    },
-    [32] = {
-        read = bind(emu, "read32"),
-        write = bind(emu, "write32")
-    }
+	[8] = {
+		read = bind(emu, "read8"),
+		write = bind(emu, "write8")
+	},
+	[16] = {
+		read = bind(emu, "read16"),
+		write = bind(emu, "write16")
+	},
+	[32] = {
+		read = bind(emu, "read32"),
+		write = bind(emu, "write32")
+	}
 }
 
 MEM_LOCATIONS = {
-    IWRAM = {
-        start = 0x02000000,
-        stop = 0x0203FFF0
-    },
-    EWRAM = {
-        start = 0x03000000,
-        stop = 0x03007FF0
-    }
+	IWRAM = {
+		start = 0x02000000,
+		stop = 0x0203FFF0
+	},
+	EWRAM = {
+		start = 0x03000000,
+		stop = 0x03007FF0
+	}
 }
 
 -------------------------------------------------------------------------------
@@ -98,8 +152,24 @@ MEM_LOCATIONS = {
 -------------------------------------------------------------------------------
 
 function on_game_start()
-    -- Load existing data for this game
-    load_master()
+	-- Init size rw bindings
+	RW_SIZES = {
+		[8] = {
+			read = bind(emu, "read8"),
+			write = bind(emu, "write8")
+		},
+		[16] = {
+			read = bind(emu, "read16"),
+			write = bind(emu, "write16")
+		},
+		[32] = {
+			read = bind(emu, "read32"),
+			write = bind(emu, "write32")
+		}
+	}
+
+	-- Load existing data for this game
+	load_master()
 end
 
 -------------------------------------------------------------------------------
@@ -107,38 +177,144 @@ end
 -------------------------------------------------------------------------------
 
 function find_addresses(value)
-    memout:print(string.format("Searching WRAM for addresses containing %d...\n", value))
+	memout:print(string.format("Searching WRAM for addresses containing %d...\n", value))
 
-    local found_addresses = {}
+	local found_locations = {}
 
-    for _, span in pairs(MEM_LOCATIONS) do
-        search_address_space_full(value, found_addresses, span)
-    end
+	-- Search memory addresses
+	for _, span in pairs(MEM_LOCATIONS) do
+		search_address_space_full(value, found_locations, span)
+	end
 
-    -- Debugging output
-    for _, address in pairs(found_addresses) do
-        local out = string.format("Found %d @%x [%d]\n", value, address.address, address.size)
-        memout:print(out)
-    end
-    
-    memout:print("Search completed.\n")
+	print(string.format("found %d locations", #found_locations))
 
-    return found_addresses
+	-- Debugging output
+	for _, address in pairs(found_locations) do
+		local out = string.format("Found %d @%x [%d]\n", value, address.start, address.size)
+		memout:print(out)
+	end
+
+	found_locations = dealias_locations(found_locations)
+	print(string.format("retrieved final locations as : %d", #found_locations))
+	-- print(dump(found_locations))
+
+	-- Debugging output
+	memout:print("Dealiased locations:\n")
+	for _, address in pairs(found_locations) do
+		local out = string.format("%d @%x [%d]\n", value, address.start, address.size)
+		memout:print(out)
+	end
+
+	memout:print("Search completed.\n")
+
+	return found_locations
 end
 
 function search_address_space_full(value, output_table, addr_span)
-    search_address_space(value, output_table, addr_span, 32)
-    search_address_space(value, output_table, addr_span, 16)
-    search_address_space(value, output_table, addr_span, 8)
-    -- TODO: Support Big Endian
+	search_address_space(value, output_table, addr_span, 32)
+	search_address_space(value, output_table, addr_span, 16)
+	search_address_space(value, output_table, addr_span, 8)
+	-- TODO: Support Big Endian
 end
 
-function search_address_space(value, output_table, addr_span, size, be)
-    for address = addr_span.start, (addr_span.stop - size), 1 do
-        if RW_SIZES[size].read(address) == value then
-            table.insert(output_table, {address=address, size=size})
-        end
-    end
+function search_address_space(value, output_table, addr_span, size)
+	for address = addr_span.start, (addr_span.stop - size), 1 do
+		if RW_SIZES[size].read(address) == value then
+			output_table[#output_table + 1] = Types.Location:new(address, size, false)
+		end
+	end
+end
+
+function dealias_locations(locations)
+	local overlap_sets = {}
+
+	print(string.format("%d locations to dealias", #locations))
+
+	for index, location in pairs(locations) do
+		if location == nil then
+			goto continue_location
+		end
+
+		local overlaps = { [1] = location }
+		locations[index] = nil
+
+		for other_index, other_location in pairs(locations) do
+			if other_location == nil or other_location:equals(location) then
+				-- print("skipping existing location")
+				goto continue
+			end
+			if location:overlaps(other_location) then
+				overlaps[#overlaps + 1] = other_location
+				locations[other_index] = nil
+				print(string.format("OVERLAP: %x", other_location.start))
+			end
+
+			::continue::
+		end
+
+		overlap_sets[#overlap_sets + 1] = overlaps
+		print(dump(overlaps))
+		print("---------")
+
+		::continue_location::
+	end
+
+	print(string.format("%d locations to dealias", #locations))
+	print(string.format("overlapping total %d", #overlap_sets))
+
+
+	local locations = {}
+
+	-- print(string.format("overlapping total %d", #overlap_sets))
+
+	for index, overlap_set in pairs(overlap_sets) do
+		local best_address = get_minimal_overlapping_address(overlap_set)
+		print(dump(overlap_set))
+		print(dump(best_address))
+		locations[#locations + 1] = best_address
+	end
+
+	print(string.format("overlapping total %d", #overlap_sets))
+	print(string.format("final location count : %d", #locations))
+
+	return locations;
+end
+
+function get_minimal_overlapping_address(overlapping_locations)
+	local smallest_index = -1
+	local smallest_size = 100000
+	local minimal_location = nil
+	-- smallest_start = 1000000
+
+	-- memout:print("determining best address from set of %d", #overlapping_locations)
+
+	for index, location in pairs(overlapping_locations) do
+		-- if (smallest_size == location.size) then
+		-- 	-- TODO -- check this logic for BE values
+		-- 	for _, location_smallest_start in pairs(t) do
+
+		-- 	end
+		-- 	memout:print("found one!!!!!\n")
+		-- end
+		if location.size < smallest_size then
+			smallest_index = index
+			smallest_size = location.size
+			minimal_location = location
+		end
+		if location.size == smallest_size and location.start < minimal_location.start then
+			minimal_location = location
+		end
+	end
+
+	return minimal_location
+end
+
+--
+function get_smallest_start_address(locations)
+	-- smallest_start = 1000
+	-- for _, location in pairs(t) do
+
+	-- end
 end
 
 -------------------------------------------------------------------------------
@@ -173,17 +349,25 @@ function look_for(name, value)
 
 	if #new_guesses == 1 then
 		local address = new_guesses[next(new_guesses)]
-		local hex = string.format("Address found at %x\n", address.address)
+		local hex = string.format("Address found at %x\n", address.start)
 		logger:print(hex)
 		known_values[name] = address
 		guessed_values[name] = nil
 	else
 		local str = string.format("Found %d possibilities\n", #new_guesses)
 		logger:print(str)
-        guessed_values[name] = new_guesses
+		guessed_values[name] = new_guesses
+	end
+end
+
+-- Debug / Demo function that simply searches memory for the desired value and discards the results
+function look(value)
+	if not is_game_loaded() then
+		logger:print("Please load a valid game before attempting to search memory.\n")
+		return
 	end
 
-
+	find_addresses(value)
 end
 
 function is_known(query_value_name)
@@ -193,9 +377,9 @@ end
 function print_unknown_value_name_error(value_name)
 	logger:print(
 		string.format("No memory address associated with %s."
-                      .. " Please use 'look_for(\"%s\", CURRENT_VALUE)' to populate known addresses.\n",
-			          value_name, value_name)
-		)
+			.. " Please use 'look_for(\"%s\", CURRENT_VALUE)' to populate known addresses.\n",
+			value_name, value_name)
+	)
 end
 
 -------------------------------------------------------------------------------
@@ -206,11 +390,11 @@ function set_value(name, new_value)
 	if not is_known(name) then
 		print_unknown_value_name_error(name)
 		return
-	end 
+	end
 
 	local address = known_values[name].address
 	local write_size = known_values[name].size
-    memout:print(string.format("Writing %d bytes to %x\n", write_size, address))
+	memout:print(string.format("Writing %d bytes to %x\n", write_size, address))
 	RW_SIZES[write_size].write(address, new_value)
 end
 
@@ -256,21 +440,21 @@ function tick_pinned_values()
 	end
 
 	tick_pinned_display()
-end 
+end
 
 function tick_pinned_display()
 	pinout:clear()
 
 	pinout:print("Pinned values:\n")
 
-	if #pinned_values == 0 then 
+	if #pinned_values == 0 then
 		pinout:print("No pinned values. Use 'pin_value(value_name, value)' to pin found values...")
 	end
 
 	for pinned_value, desired_value in pairs(pinned_values) do
 		pinout:print(string.format("%s\t-\t%x\n", pinned_value, desired_value))
 	end
-end 
+end
 
 -------------------------------------------------------------------------------
 -- Persistance
@@ -320,7 +504,7 @@ function is_game_loaded()
 end
 
 -------------------------------------------------------------------------------
--- Entry Point 
+-- Entry Point
 -------------------------------------------------------------------------------
 
 -- Ensure JSON was loaded properly
