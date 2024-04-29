@@ -102,6 +102,20 @@ function dump(o)
 	end
 end
 
+function pair_len(table)
+	if table == nil then
+		return 0
+	end
+
+	local length = 0
+
+	for _, _ in pairs(table) do
+		length = length + 1
+	end
+
+	return length
+end
+
 -------------------------------------------------------------------------------
 -- Globals
 -------------------------------------------------------------------------------
@@ -292,7 +306,7 @@ function look_for(name, value)
 	end
 
 	if known_values[name] ~= nil then
-		local str = string.format("Address already found at %x\n", known_values[name])
+		local str = string.format("Address already found at %x\n", known_values[name].start)
 		logger:print(str)
 		return
 	end
@@ -306,14 +320,14 @@ function look_for(name, value)
 
 	local new_guesses = intersection(addresses, old_guesses)
 
-	if #new_guesses == 0 then
+	if pair_len(new_guesses) == 0 then
 		logger:print("Unable to find new value in memory. Not updating filtered addresses.\n")
 		return
 	end
 
-	if #new_guesses == 1 then
+	if pair_len(new_guesses) == 1 then
 		local address = new_guesses[next(new_guesses)]
-		local hex = string.format("Address found at %x\n", address.start)
+		local hex = string.format("Address for %s found at %x\n", name, address.start)
 		logger:print(hex)
 		known_values[name] = address
 		guessed_values[name] = nil
@@ -334,6 +348,14 @@ function look(value)
 	find_addresses(value)
 end
 
+function reset_search(name)
+	guessed_values[name] = nil
+end
+
+function clear_found(name)
+	known_values[name] = nil
+end
+
 function is_known(query_value_name)
 	return known_values[query_value_name] ~= nil
 end
@@ -349,14 +371,13 @@ end
 function tick_found_values_display()
 	valout:clear()
 
-	valout:print("Found values:\n")
-
-	if #known_values == 0 then
+	if pair_len(known_values) == 0 then
+		valout:print("Found values:\n")
 		valout:print("No known values. Use 'look_for(value_name, current_value)' to begin searching for some...\n")
 		return
 	end
 
-	valout:print(string.format("%d values found:\n", #known_values))
+	valout:print(string.format("Found values (%d):\n", pair_len(known_values)))
 	valout:print("NAME\tADDRESS[SIZE]\t\tVALUE\n")
 
 	for value_name, value_location in pairs(known_values) do
@@ -383,7 +404,7 @@ function set_value(name, new_value)
 		return
 	end
 
-	local address = known_values[name].address
+	local address = known_values[name].start
 	local write_size = known_values[name].size
 	memout:print(string.format("Writing %d bytes to %x\n", write_size, address))
 	RW_SIZES[write_size].write(address, new_value)
@@ -438,12 +459,14 @@ function tick_pinned_display()
 
 	pinout:print("Pinned values:\n")
 
-	if #pinned_values == 0 then
+	if pair_len(pinned_values) == 0 then
 		pinout:print("No pinned values. Use 'pin_value(value_name, value)' to pin found values...")
+		return
 	end
 
+	pinout:print("NAME\t\tVALUE\n")
 	for pinned_value, desired_value in pairs(pinned_values) do
-		pinout:print(string.format("%s\t-\t%x\n", pinned_value, desired_value))
+		pinout:print(string.format("%s\t\t%d(0x%x)\n", pinned_value, desired_value, desired_value))
 	end
 end
 
