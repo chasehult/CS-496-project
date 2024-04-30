@@ -5,12 +5,10 @@
 local json = require("scripts/json")
 
 -------------------------------------------------------------------------------
--- Types
+-- Location Type
 -------------------------------------------------------------------------------
 
-Types = {}
-
-Types.Location = {
+Location = {
 	start = 0,
 	size = 0,
 	be = false,
@@ -18,6 +16,10 @@ Types.Location = {
 	stop = function(self)
 		return self.start + self.size / 8
 	end,
+
+    __eq = function(self, other)
+        return self.start == other.start and self.size == other.size and self.be == other.be
+    end,
 
 	equals = function(self, other)
 		if self.be == true then
@@ -40,18 +42,14 @@ Types.Location = {
 }
 
 
-function Types.Location:new(start, size, be)
-	local o = {}
-	o.start = start
-	o.size = size
-	o.be = be
-
+function Location:new(o)
 	memout:print(string.format("making new location for %x", o.start))
 
-	-- if o.start == nil or o.size == nil or o.be == nil then
-	-- print("invalid o")
-	-- return nil, "Invalid object"
-	-- end
+	if o.start == nil or o.size == nil or o.be == nil then
+        print(o.start, o.size, o.be)
+	    print("invalid o")
+	    return nil, "Invalid object"
+    end
 
 	setmetatable(o, self)
 	self.__index = self
@@ -102,6 +100,15 @@ function dump(o)
 	end
 end
 
+function rev_bytes(int, size) 
+    local new_int = 0
+    for i = 1, size / 8 do
+        new_int = (new_int << 8) + (int & 0xff)
+        int = int >> 8
+    end
+    return new_int
+end
+
 function pair_len(table)
 	if table == nil then
 		return 0
@@ -114,6 +121,14 @@ function pair_len(table)
 	end
 
 	return length
+end
+
+function map(func, table)
+    out = {}
+    for k, v in pairs(table) do
+        out[k] = func(v)
+    end
+    return out
 end
 
 -------------------------------------------------------------------------------
@@ -169,22 +184,6 @@ MEM_LOCATIONS = {
 -------------------------------------------------------------------------------
 
 function on_game_start()
-	-- Init size rw bindings
-	RW_SIZES = {
-		[8] = {
-			read = bind(emu, "read8"),
-			write = bind(emu, "write8")
-		},
-		[16] = {
-			read = bind(emu, "read16"),
-			write = bind(emu, "write16")
-		},
-		[32] = {
-			read = bind(emu, "read32"),
-			write = bind(emu, "write32")
-		}
-	}
-
 	-- Load existing data for this game
 	load_master()
 end
@@ -224,16 +223,18 @@ function find_addresses(value)
 end
 
 function search_address_space_full(value, output_table, addr_span)
-	search_address_space(value, output_table, addr_span, 32)
-	search_address_space(value, output_table, addr_span, 16)
-	search_address_space(value, output_table, addr_span, 8)
-	-- TODO: Support Big Endian
+    search_address_space(value, output_table, addr_span, 32, false)
+    search_address_space(value, output_table, addr_span, 32, true)
+    search_address_space(value, output_table, addr_span, 16, false)
+    search_address_space(value, output_table, addr_span, 16, true)
+    search_address_space(value, output_table, addr_span, 8, false)
 end
 
-function search_address_space(value, output_table, addr_span, size)
+function search_address_space(value, output_table, addr_span, size, be)
+    if be then value = rev_bytes(value, size) end
 	for address = addr_span.start, (addr_span.stop - size), 1 do
 		if RW_SIZES[size].read(address) == value then
-			output_table[#output_table + 1] = Types.Location:new(address, size, false)
+			output_table[#output_table + 1] = Location:new{start=address, size=size, be=be}
 		end
 	end
 end
@@ -241,36 +242,26 @@ end
 function dealias_locations(locations)
 	local overlap_sets = {}
 
-	for index, location in pairs(locations) do
-		if location == nil then
-			goto continue_location
-		end
+	for index, location in ipairs(locations) do
 
 		local overlaps = { [1] = location }
 		locations[index] = nil
 
-		for other_index, other_location in pairs(locations) do
-			if other_location == nil or other_location:equals(location) then
-				goto continue
-			end
+		for other_index, other_location in ipairs(locations) do
 			if location:overlaps(other_location) then
-				overlaps[#overlaps + 1] = other_location
+				table.insert(overlaps, other_location)
 				locations[other_index] = nil
 			end
-
-			::continue::
 		end
 
-		overlap_sets[#overlap_sets + 1] = overlaps
-
-		::continue_location::
+		table.insert(overlap_sets, overlaps)
 	end
 
 	local locations = {}
 
 	for index, overlap_set in pairs(overlap_sets) do
 		local best_address = get_minimal_overlapping_address(overlap_set)
-		locations[#locations + 1] = best_address
+		table.insert(locations, best_address)
 	end
 
 	return locations;
@@ -406,8 +397,19 @@ function set_value(name, new_value)
 
 	local address = known_values[name].start
 	local write_size = known_values[name].size
+    if known_values[name].be then new_value = rev_bytes(new_value) end
+
 	memout:print(string.format("Writing %d bytes to %x\n", write_size, address))
 	RW_SIZES[write_size].write(address, new_value)
+end
+
+function force_size(name, size)
+    if RW_SIZES[size] == nil then
+        logger:print("Invalid size\n")
+        return
+    end
+
+    known_values[name].size = size
 end
 
 -------------------------------------------------------------------------------
@@ -491,8 +493,8 @@ function load_master()
 	master = json.decode(data)
 
 	if master[emu:getGameCode()] ~= nil then
-		guessed_values = master[emu:getGameCode()].guessed
-		known_values = master[emu:getGameCode()].known
+		guessed_values = map(bind(Location, "new"), master[emu:getGameCode()].guessed)
+		known_values = map(bind(Location, "new"), master[emu:getGameCode()].known)
 	end
 end
 
@@ -526,6 +528,8 @@ if not json then
 	logger:print("You must run the setup script...\n")
 	return
 end
+
+on_game_start()
 
 callbacks:add("start", on_game_start)
 callbacks:add("frame", tick_pinned_values)
